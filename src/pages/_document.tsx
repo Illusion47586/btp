@@ -1,13 +1,15 @@
-import { Html, Head, Main, NextScript } from 'next/document'
+import { CssBaseline } from "@nextui-org/react";
+import { NextPage } from "next";
+import { Html, Head, Main, NextScript } from "next/document";
 
 export default function Document() {
   return (
     <Html lang="en">
-      <Head />
+      <Head> {CssBaseline.flush()} </Head>
       <body>
         <Main />
         <NextScript />
       </body>
     </Html>
-  )
+  );
 }
