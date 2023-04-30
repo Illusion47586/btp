@@ -6,13 +6,19 @@ import { useDropStore } from "@/store/drop";
 
 type Props = { name: string };
 
+const labels = {
+  colon: ["Benign", "Colon adenocarcinoma"],
+  kibneycyst: ["Cyst", "Normal"],
+  tb: ["Normal", "Tb"],
+  malaria: ["Malaria", "Normal"],
+};
+
 const Analyzer = ({ name }: Props) => {
   const [loading, setLoading] = useState(0);
 
   const { fileList } = useDropStore();
 
-  const [predictions, setPredictions] =
-    useState<(tf.Tensor<tf.Rank> | undefined)[]>();
+  const [predictions, setPredictions] = useState<string[]>();
 
   const loadTFModel = useCallback(async (db: IDBDatabase) => {
     let path = `/models/${name}/model.json`;
@@ -61,15 +67,21 @@ const Analyzer = ({ name }: Props) => {
           return value;
         });
 
-        finalPredictions.map((p, i) => {
+        const predictedLabels = finalPredictions.map((p, i) => {
           if (!p) return p;
-          console.log(fileList[i].name, p);
-          //   console.log(p.argMax().arraySync());
-          const logits = Array.from(p.dataSync());
+          console.log(fileList[i].name, p.dataSync());
+          const prediction = p.dataSync();
+
+          // Find the index of the highest value in the prediction array
+          const maxIndex = prediction.indexOf(Math.max(...prediction));
+
+          // Convert the index to a prediction label
+          // @ts-ignore
+          return labels[name][maxIndex];
           //   console.log(tf.argMax(p), logits.toString(), p.dataSync());
         });
 
-        setPredictions(finalPredictions);
+        setPredictions(predictedLabels);
       })
       .catch((e) => {
         console.error(e);
@@ -149,7 +161,7 @@ const Analyzer = ({ name }: Props) => {
               {predictions.map((value, i) => (
                 <Table.Row key={fileList[i].lastModified}>
                   <Table.Cell>{fileList[i].name}</Table.Cell>
-                  <Table.Cell>{}</Table.Cell>
+                  <Table.Cell>{value}</Table.Cell>
                 </Table.Row>
               ))}
             </Table.Body>
