@@ -7,7 +7,7 @@ import { useDropStore } from "@/store/drop";
 type Props = { name: string };
 
 const labels = {
-  colon: ["Benign", "Colon adenocarcinoma"],
+  colon: ["Colon adenocarcinoma", "Benign"],
   kibneycyst: ["Cyst", "Normal"],
   tb: ["Normal", "Tb"],
   malaria: ["Malaria", "Normal"],
@@ -21,6 +21,8 @@ const Analyzer = ({ name }: Props) => {
   const [predictions, setPredictions] = useState<string[]>();
 
   const loadTFModel = useCallback(async (db: IDBDatabase) => {
+    tf.setBackend("webgl");
+
     let path = `/models/${name}/model.json`;
 
     const dbLocation = `indexeddb://${name}`;
@@ -58,6 +60,7 @@ const Analyzer = ({ name }: Props) => {
         // save to state
         // await model.save(dbLocation);
 
+        tf.engine().startScope();
         // run predictions
         const predictions = await Promise.all([
           ...fileList.map(async (file) => await predictImage(model, file)),
@@ -69,7 +72,6 @@ const Analyzer = ({ name }: Props) => {
 
         const predictedLabels = finalPredictions.map((p, i) => {
           if (!p) return p;
-          console.log(fileList[i].name, p.dataSync());
           const prediction = p.dataSync();
 
           // Find the index of the highest value in the prediction array
@@ -78,10 +80,11 @@ const Analyzer = ({ name }: Props) => {
           // Convert the index to a prediction label
           // @ts-ignore
           return labels[name][maxIndex];
-          //   console.log(tf.argMax(p), logits.toString(), p.dataSync());
         });
 
         setPredictions(predictedLabels);
+
+        tf.engine().endScope();
       })
       .catch((e) => {
         console.error(e);
@@ -95,50 +98,36 @@ const Analyzer = ({ name }: Props) => {
     };
   }, [loadTFModel]);
 
-  const getImageSize = (
-    url: string
-  ): Promise<{ height: number; width: number }> => {
+  const getImageSize = (url: string): Promise<HTMLImageElement> => {
     const img = document.createElement("img");
 
-    const promise = new Promise<{ height: number; width: number }>(
-      (resolve, reject) => {
-        img.onload = () => {
-          const width = img.naturalWidth;
-          const height = img.naturalHeight;
-          resolve({ width, height });
-        };
-        img.onerror = reject;
-      }
-    );
+    const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+      img.onload = () => {
+        resolve(img);
+      };
+      img.onerror = reject;
+    });
 
     img.src = url;
     return promise;
   };
 
   const predictImage = async (model: tf.LayersModel, file: File) => {
-    tf.engine().startScope();
-
     const [modelWidth, modelHeight] = model.inputs[0].shape.slice(1, 3);
 
-    const uint8array = (await file.stream().getReader().read()).value;
-    if (!uint8array || !modelHeight || !modelWidth) return;
-    const { height, width } = await getImageSize(URL.createObjectURL(file));
-    const image = new ImageData(width, height);
-    image.data.set(uint8array);
+    if (!modelHeight || !modelWidth) return;
 
+    const image = await getImageSize(URL.createObjectURL(file));
     const input = tf.tidy(() => {
-      const imageTensor = tf.browser.fromPixels(image);
-      return tf.image
-        .resizeBilinear(imageTensor, [modelWidth, modelHeight])
+      return tf.browser
+        .fromPixels(image)
+        .resizeBilinear([modelWidth, modelHeight])
         .div(255.0)
+        .toFloat()
         .expandDims(0);
     });
 
     const result = model.predict(input);
-
-    // console.log(file.name, input.toString(), result.toString());
-
-    // tf.engine().endScope();
 
     return result;
   };
