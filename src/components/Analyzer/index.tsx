@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import * as tf from "@tensorflow/tfjs";
 import { Card, Progress, Table, Text } from "@nextui-org/react";
 import { useDropStore } from "@/store/drop";
+import { useModelStore } from "@/store/model";
 
 type Props = { name: string };
 
@@ -17,85 +18,66 @@ const Analyzer = ({ name }: Props) => {
   const [loading, setLoading] = useState(0);
 
   const { fileList } = useDropStore();
+  const { changeStateTo } = useModelStore();
 
   const [predictions, setPredictions] = useState<string[]>();
 
-  const loadTFModel = useCallback(async (db: IDBDatabase) => {
+  const loadTFModel = useCallback(async () => {
     tf.setBackend("webgl");
 
     let path = `/models/${name}/model.json`;
 
     const dbLocation = `indexeddb://${name}`;
 
-    // if (db.objectStoreNames.contains("models_store")) {
+    // if (request.result.objectStoreNames.contains("models_store")) {
     //   const models = await tf.io.listModels();
     //   if (dbLocation in models) path = dbLocation;
-    // } else {
-    //   db.createObjectStore("models_store");
-    //   db.createObjectStore("model_info_store");
-    //   const t = db.transaction(
-    //     ["models_store", "model_info_store"],
-    //     "readwrite"
-    //   );
-    //   t.commit();
     // }
 
-    tf.loadLayersModel(path, {
+    const model = await tf.loadLayersModel(path, {
       onProgress: (fractions) => setLoading(fractions),
-    })
-      .then(async (model) => {
-        if (!model) return;
+    });
+    if (!model) return;
 
-        // console.log(model);
+    // warming up the model before using real data
+    const shape = [...model.inputs[0].shape].map((v) => (v ? v : 1));
+    const dummy = tf.ones(shape);
+    const res = model.predict(dummy);
 
-        // warming up the model before using real data
-        const shape = [...model.inputs[0].shape].map((v) => (v ? v : 1));
-        const dummy = tf.ones(shape);
-        const res = model.predict(dummy);
+    // clear memory
+    tf.dispose(res);
+    tf.dispose(dummy);
 
-        // clear memory
-        tf.dispose(res);
-        tf.dispose(dummy);
+    tf.engine().startScope();
+    // run predictions
+    const predictions = await Promise.all([
+      ...fileList.map(async (file) => await predictImage(model, file)),
+    ]);
+    const finalPredictions = predictions.map((value) => {
+      if (Array.isArray(value)) return value[0];
+      return value;
+    });
 
-        // save to state
-        // await model.save(dbLocation);
+    const predictedLabels = finalPredictions.map((p, i) => {
+      if (!p) return p;
+      const prediction = p.dataSync();
 
-        tf.engine().startScope();
-        // run predictions
-        const predictions = await Promise.all([
-          ...fileList.map(async (file) => await predictImage(model, file)),
-        ]);
-        const finalPredictions = predictions.map((value) => {
-          if (Array.isArray(value)) return value[0];
-          return value;
-        });
+      // Find the index of the highest value in the prediction array
+      const maxIndex = prediction.indexOf(Math.max(...prediction));
 
-        const predictedLabels = finalPredictions.map((p, i) => {
-          if (!p) return p;
-          const prediction = p.dataSync();
+      // Convert the index to a prediction label
+      // @ts-ignore
+      return labels[name][maxIndex];
+    });
 
-          // Find the index of the highest value in the prediction array
-          const maxIndex = prediction.indexOf(Math.max(...prediction));
+    setPredictions(predictedLabels);
+    changeStateTo("done");
 
-          // Convert the index to a prediction label
-          // @ts-ignore
-          return labels[name][maxIndex];
-        });
-
-        setPredictions(predictedLabels);
-
-        tf.engine().endScope();
-      })
-      .catch((e) => {
-        console.error(e);
-      });
+    tf.engine().endScope();
   }, []);
 
   useEffect(() => {
-    const request = indexedDB.open("tensorflowjs", 1);
-    request.onsuccess = (event) => {
-      loadTFModel(request.result);
-    };
+    loadTFModel();
   }, [loadTFModel]);
 
   const getImageSize = (url: string): Promise<HTMLImageElement> => {

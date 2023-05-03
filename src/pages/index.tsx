@@ -18,14 +18,13 @@ import { calSansFont } from "./_app";
 import DropZone from "@/components/DropZone";
 import { useDropStore } from "@/store/drop";
 import Analyzer from "@/components/Analyzer";
+import { useModelStore } from "@/store/model";
 
 export default function Home() {
   const { theme } = useTheme();
   const [isModalOpen, changeModalStateTo] = useState(false);
 
-  const [currentAction, setCurrentAction] = useState<
-    "selecting" | "analyzing" | "done"
-  >("selecting");
+  const { state, changeStateTo } = useModelStore();
 
   const [currentModel, setCurrentModel] = useState("colon");
 
@@ -93,14 +92,14 @@ export default function Home() {
           onClose={() => {
             changeModalStateTo(false);
             clearFiles();
-            setCurrentAction("selecting");
+            changeStateTo("selecting");
           }}
         >
           <Modal.Header className={calSansFont.className}>
             <Text h3>Enter the required images</Text>
           </Modal.Header>
           <Modal.Body>
-            {currentAction === "selecting" ? (
+            {state === "selecting" ? (
               <DropZone />
             ) : (
               <Analyzer name={currentModel} />
@@ -109,16 +108,18 @@ export default function Home() {
           <Modal.Footer>
             <Button
               className={calSansFont.className}
-              disabled={fileList.length === 0 || currentAction === "analyzing"}
+              disabled={fileList.length === 0 || state === "analyzing"}
               onClick={() => {
-                if (currentAction === "selecting") {
-                  setCurrentAction("analyzing");
+                if (state === "selecting") {
+                  changeStateTo("analyzing");
+                } else if (state === "done") {
+                  changeModalStateTo(false);
                 }
               }}
             >
-              {currentAction === "selecting" ? (
+              {state === "selecting" ? (
                 "Analyze Images"
-              ) : currentAction === "done" ? (
+              ) : state === "done" ? (
                 "Close"
               ) : (
                 <Loading color="currentColor" size="sm" />
