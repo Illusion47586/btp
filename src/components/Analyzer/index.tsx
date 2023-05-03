@@ -8,7 +8,7 @@ type Props = { name: string };
 
 const labels = {
   colon: ["Colon adenocarcinoma", "Benign"],
-  kibneycyst: ["Cyst", "Normal"],
+  kidneycyst: ["Cyst", "Normal"],
   tb: ["Normal", "Tb"],
   malaria: ["Malaria", "Normal"],
 };
